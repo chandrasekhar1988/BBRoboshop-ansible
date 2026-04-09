@@ -3,7 +3,7 @@
   hosts: redis
   become: yes
   tasks:
-    - name: disable current redis modules
+    - name: reset redis module
       ansible.builtin.command: dnf module reset redis -y
       register: reset_out
       changed_when: "'Resetting modules' in reset_out.stdout"
@@ -13,7 +13,7 @@
       register: enable_out
       changed_when: "'Enabling module streams' in enable_out.stdout"
 
-    - name: install redis
+    - name: install redis package
       ansible.builtin.dnf:
         name: redis
         state: present

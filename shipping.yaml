@@ -14,57 +14,43 @@
       ansible.builtin.user:
         name: roboshop
 
-    - name: clear app directory
+    - name: prepare app directory
       ansible.builtin.file:
         path: /app
         state: "{{ item }}"
-      loop:
-        - absent
-        - directory
+      loop: [absent, directory]
 
-    - name: download and extract shipping application
+    - name: download and extract shipping
       ansible.builtin.unarchive:
         src: https://roboshop-builds.s3.amazonaws.com/shipping.zip
         dest: /app
         remote_src: yes
 
-    - name: install dependencies
-      ansible.builtin.command: mvn clean package
+    - name: build application
+      ansible.builtin.command: "{{ item }}"
       args:
         chdir: /app
+      loop:
+        - mvn clean package
+        - mv target/shipping-1.0.jar shipping.jar
 
-    - name: rename jar file
-      ansible.builtin.command: mv target/shipping-1.0.jar shipping.jar
-      args:
-        chdir: /app
-
-    - name: copy shipping service
-      ansible.builtin.copy:
-        src: shipping.service
-        dest: /etc/systemd/system/shipping.service
-
-    - name: daemon reload
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-
-    - name: install mysql client
+    - name: setup service and mysql client
       ansible.builtin.dnf:
         name: mysql
         state: present
 
-    - name: check cities schema exists
-      ansible.builtin.command:  mysql -h 172.31.79.59 -uroot -p{{mysql_password}} -sN -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'cities'"
-      register: db
+    - name: check and load schema
+      block:
+        - name: check if schema exists
+          ansible.builtin.command: mysql -h 172.31.79.59 -uroot -p{{mysql_password}} -sN -e "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = 'cities'"
+          register: db
 
-    - name: load cities data
-      ansible.builtin.shell: "mysql -h 172.31.79.59 -uroot -p{{mysql_password}} < /app/db/{{ item }}.sql"
-      loop:
-        - app-user
-        - schema
-        - master-data
-      when: db.stdout == "0"
+        - name: load sql files
+          ansible.builtin.shell: "mysql -h 172.31.79.59 -uroot -p{{mysql_password}} < /app/db/{{ item }}.sql"
+          loop: [app-user, schema, master-data]
+          when: db.stdout == "0"
 
-    - name: start and enable shipping
+    - name: start shipping service
       ansible.builtin.service:
         name: shipping
         state: restarted
